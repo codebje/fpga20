@@ -1,2 +1,5 @@
 bin/
 obj_dir/
+test/*.d
+test/*.o
+test/main

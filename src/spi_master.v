@@ -2,38 +2,43 @@
 
 // SPI master - control a w25q32 4mbit Flash module
 // 
-// How it works
-// 
-// An instruction begins by driving /CS low. When a word is ready to be
-// written, the next bit to write is latched onto MOSI on the falling edge of
-// the clock signal and the next bit is latched off MISO on the rising edge.
-// When all eight bits have been transferred the clock will remain low.
-// Further bytes may be read and written, with the instruction terminated by
-// driving /CS high.
-//
-// The 'active' signal begins a transaction and pulls /CS low immediately. The
-// output clock will remain low until the 'send' signal is 
+// WISHBONE DATASHEET
+// General description:         WISHBONE SLAVE interface, revision level B4
+// Supported cycles:            SLAVE, READ/WRITE
+//                              SLAVE, BLOCK READ/WRITE
+//                              SLAVE, RMW
+// Data port size:              8-bit
+// Data port granularity:       8-bit
+// Maximum operand size:        8-bit
+// Data transfer ordering:      BIG/LITTLE ENDIAN
+// Data transfer sequencing:    UNDEFINED
+// Signals:                     ACK_O
+//                              CLK_I
+//                              DAT_I[7:0]
+//                              DAT_O[7:0]
+//                              RST_I
+//                              STB_I
+//                              CYC_I
+//                              WE_I
 
-module spi_master(active, sending, clock, out, in, miso, mosi, cs, clk);
+/* verilator lint_off UNUSED */
+module spi_master(ACK_O, CLK_I, DAT_I, DAT_O, RST_I, STB_I, CYC_I, WE_I, miso, mosi, cs, clk);
 
-input           active;         // is an SPI transaction active?
-output          sending;        // high if a transmission is in progress
-input           clock;          // input clock source
-input  [7:0]    out;            // output data
-output [7:0]    in;             // input data
+input           CLK_I, RST_I, STB_I, CYC_I, WE_I, miso;
+output          ACK_O, mosi, cs, clk;
+input  [7:0]    DAT_I;
+output [7:0]    DAT_O;
 
-input           miso;
-output          mosi;
-output          cs;
-output          clk;
+assign ACK_O = 1'b0;
+assign DAT_O = 8'b0;
+assign mosi = 1'b0;
+assign cs = 1'b1;
+assign clk = CLK_I;
 
-assign clk = active & sending & clock;
-
-always @(negedge clock) begin
-    // if active, 
+always @(negedge CLK_I) begin
 end
 
-always @(posedge clock) begin
+always @(posedge CLK_I) begin
 end
 
 endmodule

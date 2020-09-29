@@ -2,6 +2,7 @@ TARGET=fpga20
 
 SRC_DIR:=src
 BIN_DIR:=bin
+TEST_DIR:=test
 
 SOURCES:=$(wildcard $(SRC_DIR)/*.v)
 PLOTS=$(patsubst $(SRC_DIR)/%.v,$(BIN_DIR)/%.png,$(SOURCES))
@@ -11,9 +12,6 @@ all: $(BIN_DIR)/$(TARGET).bin
 
 $(BIN_DIR)/$(TARGET).json: $(SOURCES)
 	@yosys -q -p "synth_ice40 -json $@ -top $(TARGET)" $^
-
-#$(BIN_DIR)/$(TARGET).txt: $(BIN_DIR)/$(TARGET).json $(PCF_SOURCE)
-#@arachne-pnr -P vq100 -d 1k -p $(PCF_SOURCE) $(TARGET).blif -o $@
 
 $(BIN_DIR)/$(TARGET).asc: $(BIN_DIR)/$(TARGET).json $(PCF_SOURCE)
 	@nextpnr-ice40 -q --hx1k --package vq100 --top $(TARGET) --json $< \
@@ -30,6 +28,9 @@ $(BIN_DIR)/%.png: $(BIN_DIR)/%.dot
 
 plots: .PHONY $(PLOTS)
 	@imgcat $(PLOTS)
+
+test:	.PHONY
+	make -C $(TEST_DIR)
 
 clean:
 	@rm -f bin/*
