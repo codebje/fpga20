@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "Vfpga20.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
 
 #include "signal.h"
 #include "peripheral.h"
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <iterator>
 #include <iostream>
+#include <iomanip>
 
 using namespace std;
 
@@ -18,6 +20,7 @@ using namespace std;
 
 const int IO_STATUS       = 0x100;
 const int IO_SPI_DATA     = 0x104;
+const int IO_SPI_DUAL     = 0x105;
 
 // test I/O ops: write <byte> to <address>, read <byte> from <address>
 // An I/O op will take four PHI cycles:
@@ -35,34 +38,54 @@ typedef struct bus_state {
     cpu_op      op;
     vluint32_t  address;
     vluint8_t   byte;
+    string      desc;
 } bus_state;
 
 const vector<bus_state> states(
     {
-        { IORead, IO_STATUS, 0x0C },            // after reset the FPGA auto-blinks the LEDs
-        { IOWrite, IO_STATUS, 0x00 },           // disable auto-blink
-        { IORead, IO_STATUS, 0x00 },            // confirm it stuck
-        { IOWrite, IO_SPI_DATA, 0x90 },         // write manufacturer code command
-        { IORead, IO_STATUS, 0x20 },            // SPITX should be set
-        { IOWrite, IO_STATUS, 0x00 },           // "clear" it
-        { IORead, IO_STATUS, 0x20 },            // SPITX should still be set - it's read-only
-        { IOWrite, IO_STATUS, 0x10 },           // Enable SPI transmission
+        { IORead, IO_STATUS, 0x0C,      "Reset state of status register" },
+        { IOWrite, IO_STATUS, 0x00,     "Disable auto-blink" },
+        { IORead, IO_STATUS, 0x00,      "Confirm status write succeeded" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command (should not have effect)" },
+        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 23-16" },
+        { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 15-08" },
+        { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 07-00" },
+        { IOWrite, IO_SPI_DATA, 0xff,   "Write SPI dummy byte" },
+        { IORead, IO_SPI_DATA, 0xef,    "Read manufacturer ID" },
+        { IORead, IO_SPI_DATA, 0x15,    "Read device ID" },
+        { IOWrite, IO_STATUS, 0x00,     "Disable SPI transaction" },
+        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
+        { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
+        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 23-16" },
+        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 15-08" },
+        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 07-00" },
+        { IOWrite, IO_SPI_DUAL, 0xff,   "Write SPI dummy byte" },
+        { IORead, IO_SPI_DUAL, 0xef,    "Read manufacturer ID" },
+        { IORead, IO_SPI_DUAL, 0x15,    "Read device ID" },
     }
 );
 
 int main(int argc, char **argv) {
     // Initialize Verilators variables
     Verilated::commandArgs(argc, argv);
+    Verilated::traceEverOn(true);
 
     // Create an instance of our module under test
     Vfpga20 *tb = new Vfpga20;
+    VerilatedVcdC *tfp = new VerilatedVcdC;
+    tb->trace(tfp, 99);
+    tfp->open("main.vcd");
 
     // Clock states
     double elapsed = 0.0;
+    vluint64_t tick = 0;
     long phi_ticks = 1;
     long osc_ticks = 1;
     vluint8_t phi_state = 0;
     vluint8_t osc_state = 0;
+    int wait_cycles = 0;
 
     // Peripherals
     vector<peripheral*> peripherals;
@@ -77,31 +100,53 @@ int main(int argc, char **argv) {
     // "reset" the CPU
     tb->IORQ = tb->MREQ = tb->RD = tb->WR = tb->M1 = 1;
 
+    // What is D driven to by the bus?
+    vluint8_t driven_d = 0xff, driven_di = 1, driven_do = 1;
+
+    // Set up numbers as base-16, 0-padded, right-aligned
+    cout << hex << setfill('0') << setw(2) << right;
+
     // Tick the clock until we are done
     while(state < states.end()) {
         bool phi_clocked = false;
+
+        // Let any combinatorial changes from the CPU settle
+        // Verilator doesn't handle tri-state logic
+        tb->eval();
+        if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
+        if (tb->fpga20__DOT__bus_state != 2) tb->WAIT = 1;
+        //if (!tb->fpga20__DOT__spi_write_mosi) tb->SPI_SDO = driven_do;
+        //if (!tb->fpga20__DOT__spi_write_miso) tb->SPI_SDI = driven_di;
 
         double next_phi = phi_ticks/PHI_FREQ;
         double next_osc = osc_ticks/OSC_FREQ;
         if (next_phi < next_osc) {
             elapsed = next_phi;
             phi_ticks++;
+            tick = 1e6*elapsed;
             phi_state = 1 - phi_state;
             tb->PHI = phi_state;
             phi_clocked = true;
-            //printf("PHI <- %d, A=%05x D=%02X MREQ=%d IORQ=%d RD=%d WR=%d LED1=%d LED2=%d\n",
-                    //phi_state, tb->A, tb->D, tb->MREQ, tb->IORQ, tb->RD, tb->WR, tb->LED1, tb->LED2);
         } else {
             elapsed = next_osc;
             osc_ticks++;
+            tick = 1e6*elapsed;
             osc_state = 1 - osc_state;
             tb->CLK1 = osc_state;
         }
 
+        if (tfp) tfp->dump(tick - 1);
         tb->eval();
+        //if (!tb->fpga20__DOT__spi_write_mosi) tb->SPI_SDO = driven_do;
+        //if (!tb->fpga20__DOT__spi_write_miso) tb->SPI_SDI = driven_di;
+        if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
+        if (tb->fpga20__DOT__bus_state != 2) tb->WAIT = 1;
+
         for (peripheral *p : peripherals) {
             p->eval(tb, elapsed);
         }
+        driven_di = tb->SPI_SDI;
+        driven_do = tb->SPI_SDO;
 
         // check for edges on signals of interest
 
@@ -116,9 +161,10 @@ int main(int argc, char **argv) {
                         // T1 falls: /IORQ low, /RD low for reads, data to <byte> for writes
                         tb->IORQ = 0;
                         if (state->op == IORead) tb->RD = 0;
-                        if (state->op == IOWrite) tb->D = state->byte;
-                        if (state->op == IOWrite)
-                            printf("IO write: %04x = %02x\n", tb->A & 0xffff, tb->D);
+                        if (state->op == IOWrite) {
+                            tb->D = driven_d = state->byte;
+                            cout << state->desc << ": OK" << endl;
+                        }
                         cycle = T2;
                     }
                     break;
@@ -129,34 +175,50 @@ int main(int argc, char **argv) {
                     }
                     if (!phi_state) {
                         cycle = TW;
+                        wait_cycles = 1;
                     }
-                    // TODO T2 falls: sample /WAIT
                     break;
                 case TW:
+                    // TW falls: sample /WAIT
                     if (!phi_state) {
-                        cycle = T3;
+                        if (!tb->WAIT) {
+                            wait_cycles++;
+                            if (wait_cycles > 10) {
+                                cout << "ERROR: More than 10 wait cycles elapsed." << endl;
+                                state = states.end();
+                            }
+                        } else {
+                            cycle = T3;
+                        }
                     }
-                    //    TW falls: sample /WAIT
                     break;
                 case T3:
                     if (!phi_state) {
                         // T3 falls: latch data for reads, /IORQ, /RD, /WR go high, data goes high
                         if (state->op == IORead) {
-                            printf("IO read: %04x = %02x\n", tb->A & 0xffff, tb->D);
+                            cout << state->desc << ": ";
                             if (tb->D != state->byte) {
-                                printf("IO read is incorrect: got %u instead of %u in PHI cycle %ld\n",
-                                        tb->D, state->byte, phi_ticks);
+                                cout << "FAIL (was: 0x" << setw(2) << (unsigned)tb->D << ", expected: 0x";
+                                cout << setw(2) << (unsigned)state->byte << ")";
+                            } else {
+                                cout << "OK";
                             }
+                            cout << endl;
                         }
                         state++;
                         cycle = T1;
                         tb->IORQ = tb->RD = tb->WR = 1;
-                        tb->D = 0xff;
+                        driven_d = 0xff;
                     }
                     break;
             }
         }
+
+        if (tfp) tfp->dump(tick);
+        if (tfp) tfp->flush();
     }
+
+    tfp->close();
 
     exit(EXIT_SUCCESS);
 }

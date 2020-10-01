@@ -21,7 +21,7 @@ $(BIN_DIR)/%.bin: $(BIN_DIR)/%.asc
 	@icepack $^ $@
 
 $(BIN_DIR)/%.dot: $(SRC_DIR)/%.v
-	@yosys -q -p 'proc; opt; show -prefix $* -format dot;' $<
+	@yosys -q -p 'proc; opt; show -prefix $(BIN_DIR)/$* -format dot;' $<
 
 $(BIN_DIR)/%.png: $(BIN_DIR)/%.dot
 	@dot -Tpng $< > $@
@@ -29,10 +29,10 @@ $(BIN_DIR)/%.png: $(BIN_DIR)/%.dot
 plots: .PHONY $(PLOTS)
 	@imgcat $(PLOTS)
 
-test:	.PHONY
+test:	$(BIN_DIR)/$(TARGET).bin .PHONY
 	make -C $(TEST_DIR)
 
 clean:
-	@rm -f bin/*
+	@rm -f bin/* obj_dir/*
 
 .PHONY:

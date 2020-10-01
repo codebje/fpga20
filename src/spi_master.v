@@ -29,16 +29,63 @@ output          ACK_O, mosi, cs, clk;
 input  [7:0]    DAT_I;
 output [7:0]    DAT_O;
 
-assign ACK_O = 1'b0;
-assign DAT_O = 8'b0;
-assign mosi = 1'b0;
-assign cs = 1'b1;
-assign clk = CLK_I;
+reg [2:0]       index;
+reg [7:0]       in;
+reg             ack;
+reg             out;
 
-always @(negedge CLK_I) begin
+assign DAT_O = in;
+assign cs = !CYC_I;
+assign ACK_O = ack;
+assign mosi = out;
+
+reg transfer;
+initial transfer = 0;
+initial index = 7;
+
+reg outclk;
+
+assign clk = outclk;//transfer & ~CLK_I;
+
+// rising edge: shift
+always @(posedge CLK_I) begin
+    if (RST_I) begin
+        transfer <= 0;
+        index <= 7;
+        ack <= 0;
+    end else if (transfer) begin
+        if (outclk) begin
+            index <= index - 1;
+            out <= DAT_I[index];
+            if (index == 7) begin
+                transfer <= 0;
+                ack <= 1;
+                out <= 0;
+            end else begin
+                ack <= 0;
+            end
+        end else begin
+            in <= { in[6:0], miso };
+        end
+        outclk <= ~outclk;
+    end else if (CYC_I & STB_I & !ack) begin
+        out <= DAT_I[7];
+        transfer <= 1;
+        index <= 6;
+        outclk <= 0;
+    end else begin
+        transfer <= 0;
+        ack <= 0;
+        index <= 7;
+        outclk <= 0;
+    end
 end
 
-always @(posedge CLK_I) begin
+// falling edge: latch
+always @(negedge CLK_I) begin
+    if (transfer) begin
+    end else begin
+    end
 end
 
 endmodule

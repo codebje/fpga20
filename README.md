@@ -35,6 +35,8 @@ The SPI clock runs off the 100MHz oscillator. It takes eight cycles to transfer 
 
 /WR will be low for at least 150ns for an IO cycle, with data valid at least 10ns before and after that event. Latching /WR and /IORQ via a stabilizer chain will give more than enough time to transmit 8 bits over SPI at 100MHz before the end of the write cycle. However /RD only has ~90ns available before data must be on the data bus, which is not enough time to run a full SPI transfer including stabilizers and up to 10ns to observe /RD's falling edge. Using a write or read to initiate a transfer, with a read retrieving the _last_ transferred value, is well within timing constraints.
 
+One port for single-mode read/write, with /WAIT held low while the operation is in progress. One port for dual-mode read/write, with /WAIT held low while the operation is in progress. The W32Q never reads and writes at the same time.
+
 ## I2C master
 
 Not yet implemented.

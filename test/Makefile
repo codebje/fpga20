@@ -7,16 +7,22 @@ MODULES=fpga20
 all:	main
 	@./main
 
-main:	main.o spiflash.o verilated.o $(patsubst %,../obj_dir/V%__ALL.o,$(MODULES))
-	@$(CXX) $(LDFLAGS) -o $@ $^
+main:	main.o spiflash.o verilated.o verilated_vcd_c.o $(patsubst %,../obj_dir/V%__ALL.o,$(MODULES))
+	$(CXX) $(LDFLAGS) -o $@ $^
 
 main.o: $(patsubst %,../obj_dir/V%.h,$(MODULES))
 
 verilated.o: $(shell pkg-config --variable=includedir verilator)/verilated.cpp
-	@$(CXX) $(CPPFLAGS) -c -o $@ $^
+	$(CXX) $(CPPFLAGS) -c -o $@ $^
 
-../obj_dir/V%.h: ../src/%.v
-	@(cd .. ; verilator -Wall -Isrc -cc src/$*.v)
+verilated_vcd_c.o: $(shell pkg-config --variable=includedir verilator)/verilated_vcd_c.cpp
+	$(CXX) $(CPPFLAGS) -c -o $@ $^
+
+verilated_trace.o: $(shell pkg-config --variable=includedir verilator)/verilated_trace.cpp
+	$(CXX) $(CPPFLAGS) -c -o $@ $^
+
+../obj_dir/V%.h: ../src/*.v
+	@(cd .. ; verilator -Wall -Isrc --trace -cc src/$*.v)
 
 ../obj_dir/V%__ALL.o: ../obj_dir/V%.h
 	echo making $*
