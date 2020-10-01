@@ -2,11 +2,11 @@
 /* verilator lint_off UNDRIVEN */
 module fpga20(PHI, CLK1, LED1, LED2, I2C_SDA, I2C_SCL, A, D, MREQ, IORQ, RD, WR, M1, WAIT, SPI_SDO, SPI_SDI, SPI_SCK, SPI_SS);
 
-input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1;
+input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
 inout   [19:0]  A;
 inout   [7:0]   D;
-output          LED1, LED2, SPI_SS, SPI_SCK;
-inout           WAIT, I2C_SDA, SPI_SDO, SPI_SDI;
+output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO;
+inout           WAIT, I2C_SDA;
 
 parameter [15:0] ADDR_STATUS    = 16'h0100,
                  ADDR_SPI_DATA  = 16'h0104,
@@ -48,12 +48,10 @@ edgedetect edge_phi(phi_read & io_read, phi_edge, CLK1);
 reg [2:0] phi_count;
 
 // SPI control registers: the current SPI mode
-parameter [1:0] SPI_READ        = 2'b00,
-                SPI_WRITE       = 2'b01,
-                SPI_SINGLE      = 2'b00,
-                SPI_DUAL        = 2'b10;
-reg [1:0] spi_mode;
-reg [9:0] spi_byte;
+parameter SPI_READ      = 1'b0,
+          SPI_WRITE     = 1'b1;
+reg spi_mode;
+reg [7:0] spi_byte;
 reg [2:0] spi_bit;
 reg spi_phase;
 
@@ -108,13 +106,8 @@ always @(posedge CLK1) begin
                         bus_state <= BUS_COMPLETE;
                     end
                     ADDR_SPI_DATA: begin
-                        spi_mode <= SPI_READ | SPI_SINGLE;
+                        spi_mode <= SPI_READ;
                         spi_begin();
-                    end
-                    ADDR_SPI_DUAL: begin
-                        spi_mode <= SPI_READ | SPI_DUAL;
-                        spi_begin();
-                        spi_bit <= 3;
                     end
                     default: ;
                 endcase
@@ -125,15 +118,9 @@ always @(posedge CLK1) begin
                         bus_state <= BUS_COMPLETE;
                     end
                     ADDR_SPI_DATA: begin
-                        spi_mode <= SPI_WRITE | SPI_SINGLE;
+                        spi_mode <= SPI_WRITE;
                         spi_begin();
-                        spi_byte <= {1'b0, D, 1'b0};
-                    end
-                    ADDR_SPI_DUAL: begin
-                        spi_mode <= SPI_WRITE | SPI_DUAL;
-                        spi_begin();
-                        spi_bit <= 3;
-                        spi_byte <= {D, 2'b0};
+                        spi_byte <= D;
                     end
                     default: ;
                 endcase
@@ -145,22 +132,16 @@ always @(posedge CLK1) begin
         end
         BUS_SPI_TXN: begin
             if (spi_phase) begin // latch phase
-                if (spi_mode[0] == 0) begin
-                    if (spi_mode[1]) begin
-                        spi_byte[1:0] <= { SPI_SDI, SPI_SDO };
-                    end else begin
-                        spi_byte[0] <= SPI_SDI;
-                    end
+                if (spi_mode == SPI_READ) begin
+                    spi_byte[0] <= SPI_SDI;
                 end
                 spi_bit <= spi_bit - 1;
             end else begin // shift phase
-                if (spi_mode[1]) begin
-                    spi_byte <= { spi_byte[7:0], 2'b0 };
-                end else begin
-                    spi_byte <= { spi_byte[8:0], 1'b0 };
-                end
                 if (spi_bit == 7) begin
                     bus_state <= BUS_COMPLETE;
+                    data_reg <= spi_byte;
+                end else begin
+                    spi_byte <= { spi_byte[6:0], 1'b0 };
                 end
             end
             spi_phase <= ~spi_phase;
@@ -170,16 +151,12 @@ always @(posedge CLK1) begin
 
 end
 
-wire spi_write_mosi = (bus_state == BUS_SPI_TXN && spi_mode[0]);
-wire spi_write_miso = (spi_write_mosi && spi_mode[1]);
-
 assign WAIT = bus_state == BUS_SPI_TXN ? 0 : 1'bz;
 assign D = read_data_reg ? data_reg : 8'bz;
 assign SPI_SS = ~status_spi;
 assign LED1 = status_clk0 ? blink1 : status_led0;
 assign LED2 = status_clk1 ? blink2 : status_led1;
-assign SPI_SDO = spi_write_mosi ? (spi_write_miso ? spi_byte[9] : spi_byte[8]) : 1'bz;
-assign SPI_SDI = spi_write_miso ? spi_byte[9] : 1'bz;
+assign SPI_SDO = spi_byte[7];
 assign SPI_SCK = bus_state == BUS_SPI_TXN & ~spi_phase;
 
 endmodule
