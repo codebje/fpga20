@@ -16,26 +16,36 @@ spiflash::spiflash() {
     bit = 0;
 }
 
+// true if the flash is driving SDI/SDO at the same time as the FPGA
+bool spiflash::line_conflicts(Vfpga20 *module) {
+    if (is_xmit && module->fpga20__DOT__spi_sdi_en) return true;
+    if (is_xmit && is_dual && module->fpga20__DOT__spi_sdo_en) return true;
+    return false;
+}
+
 void spiflash::eval(Vfpga20 *module, double time) {
+    // if the flash is not selected, reset state and bail out
+    if (module->SPI_SS) {
+        state = Idle;
+        command = 0;
+        address = 0;
+        return;
+    }
+
     switch (state) {
         case Idle:
-            if (!module->SPI_SS) {
-                // Mode 0: SCK is already low, get first bit onto MISO
-                // Mode 3: SCK is high, shift when it falls
-                state = module->SPI_SCK ? Shift : Latch;
-                if (state == Shift) {
-                    if (is_xmit) {
-                        module->SPI_SDI = (xmit_byte >> 7) & 1;
+            // Mode 0: SCK is already low, get first bit onto MISO
+            // Mode 3: SCK is high, shift when it falls
+            state = module->SPI_SCK ? Shift : Latch;
+            if (state == Shift) {
+                if (is_xmit) {
+                    module->SPI_SDI = (xmit_byte >> 7) & 1;
+                    xmit_byte <<= 1;
+                    if (is_dual) {
+                        module->SPI_SDO = (xmit_byte >> 7) & 1;
                         xmit_byte <<= 1;
-                        if (is_dual) {
-                            module->SPI_SDO = (xmit_byte >> 7) & 1;
-                            xmit_byte <<= 1;
-                        }
                     }
                 }
-            } else {
-                command = 0;
-                xmit_byte = 0;
             }
             break;
         // in the Shift state wait for SCK high, then latch
@@ -71,7 +81,7 @@ void spiflash::eval(Vfpga20 *module, double time) {
 }
 
 void spiflash::execute() {
-    printf("spi received byte %02x (is_xmit=%d, address=%d)\n", recv_byte, is_xmit, address);
+    printf("spi received byte %02x (command=%02x, is_xmit=%d, address=%d)\n", recv_byte, command, is_xmit, address);
     if (command == 0) {
         switch (recv_byte) {
             case 0x90:

@@ -18,6 +18,7 @@ private:
 public:
     spiflash();
     void eval(Vfpga20 *module, double time);
+    bool line_conflicts(Vfpga20 *module);
 private:
     void execute();
 };

@@ -106,6 +106,9 @@ int main(int argc, char **argv) {
     // Set up numbers as base-16, 0-padded, right-aligned
     cout << hex << setfill('0') << setw(2) << right;
 
+    // /WAIT is latched at the start of T2/TW
+    bool latched_wait = false;
+
     // Tick the clock until we are done
     while(state < states.end()) {
         bool phi_clocked = false;
@@ -114,12 +117,12 @@ int main(int argc, char **argv) {
         // Verilator doesn't handle tri-state logic
         tb->eval();
         if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
-        if (tb->fpga20__DOT__bus_state != 2) tb->WAIT = 1;
-        //if (!tb->fpga20__DOT__spi_write_mosi) tb->SPI_SDO = driven_do;
-        //if (!tb->fpga20__DOT__spi_write_miso) tb->SPI_SDI = driven_di;
+        if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
+        if (!tb->fpga20__DOT__spi_sdo_en) tb->SPI_SDO = driven_do;
+        if (!tb->fpga20__DOT__spi_sdi_en) tb->SPI_SDI = driven_di;
 
-        double next_phi = phi_ticks/PHI_FREQ;
-        double next_osc = osc_ticks/OSC_FREQ;
+        double next_phi = phi_ticks/(PHI_FREQ*2);
+        double next_osc = osc_ticks/(OSC_FREQ*2);
         if (next_phi < next_osc) {
             elapsed = next_phi;
             phi_ticks++;
@@ -137,16 +140,20 @@ int main(int argc, char **argv) {
 
         if (tfp) tfp->dump(tick - 1);
         tb->eval();
-        //if (!tb->fpga20__DOT__spi_write_mosi) tb->SPI_SDO = driven_do;
-        //if (!tb->fpga20__DOT__spi_write_miso) tb->SPI_SDI = driven_di;
+        if (!tb->fpga20__DOT__spi_sdo_en) tb->SPI_SDO = driven_do;
+        if (!tb->fpga20__DOT__spi_sdi_en) tb->SPI_SDI = driven_di;
         if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
-        if (tb->fpga20__DOT__bus_state != 2) tb->WAIT = 1;
+        if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
 
         for (peripheral *p : peripherals) {
             p->eval(tb, elapsed);
         }
         driven_di = tb->SPI_SDI;
         driven_do = tb->SPI_SDO;
+
+        if (flash.line_conflicts(tb)) {
+            cout << "ERROR: SDI/SDO drive conflict between FPGA and Flash" << endl;
+        }
 
         // check for edges on signals of interest
 
@@ -179,9 +186,10 @@ int main(int argc, char **argv) {
                     }
                     break;
                 case TW:
+                    if (phi_state) latched_wait = tb->WAIT;
                     // TW falls: sample /WAIT
                     if (!phi_state) {
-                        if (!tb->WAIT) {
+                        if (!latched_wait) {
                             wait_cycles++;
                             if (wait_cycles > 10) {
                                 cout << "ERROR: More than 10 wait cycles elapsed." << endl;
