@@ -164,7 +164,7 @@ assign D = read_data_reg ? data_reg : 8'bz;
 assign SPI_SS = ~status_spi;
 assign LED1 = status_clk0 ? blink1 : status_led0;
 assign LED2 = status_clk1 ? blink2 : status_led1;
-assign SPI_SDO = spi_byte[7];
+assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction = SPI_WRITE) ? spi_byte[7] : 1'b1;
 assign SPI_SCK = (bus_state != BUS_SPI_TXN) | ~spi_phase;
 
 endmodule
