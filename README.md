@@ -18,14 +18,12 @@ The FPGA on the TRS-20's CPU board serves several roles:
 
 ## SPI master
 
-  - BUSY bit in status register for program/erase operations
-  - Write-enable latch (WEL) read-only bit in status register
-  - BP2, BP1, BP0 block-protect R/W bits in status register (default 0, nothing protected)
-  - TB top/bottom protect R/W bit determines if BP\* protect from top down or bottom up
-  - SEC R/W bit controls whether BP\* protects 4kb sectors or 64kb blocks
-  - CMP R/W bit complements protection of SEC, TB, BP2, BP1, BP0
-  - Can protect first 32kB with CMP=0, SEC=1, TB=1, BP2=1, BP1=0, BP0=X
-  - MSB first
+The original design was to provide an enable bit more or less directly tied to the slave select pin, and to then use a data port to read and write bytes. This design works, and with a 50MHz SPI clock speed one extra wait state is required for reads but not for writes. Dual-mode reads and writes do not need extra wait states. This works, as of revision a715b8e.
+
+However, it's not very safe. A dual-mode write uses both the MOSI and MISO pins as inputs to the flash IC, and a dual-mode read uses them both as outputs from the flash IC. If the master and slave aren't perfectly synchronised on which direction data is going at all times then they will try to drive these lines in opposition to each other. This will likely result in one or both of them getting a fried pin. This would happen if the flash IC expects to output data when the CPU attempts to also output data - either single or dual mode.
+
+
+
 
 The Status A port (0100) is used for SPI control. The SPI Data port (0104) is used for data in/out.
 

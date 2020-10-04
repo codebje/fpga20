@@ -12,13 +12,11 @@ private:
     uint32_t address;
     uint8_t xmit_byte;
     bool is_xmit;
-    bool is_dual;
     uint8_t recv_byte;
     uint8_t bit;
 public:
     spiflash();
     void eval(Vfpga20 *module, double time);
-    bool line_conflicts(Vfpga20 *module);
 private:
     void execute();
 };

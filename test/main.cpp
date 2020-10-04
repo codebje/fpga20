@@ -31,7 +31,7 @@ const int IO_SPI_DUAL     = 0x105;
 //    TW falls: sample /WAIT
 //    T3 falls: latch data for reads, /IORQ, /RD, /WR go high, data goes high
 
-enum cpu_op { IORead, IOWrite, };
+enum cpu_op { IORead, IOWrite };
 enum cpu_cycle { T1, T2, TW, T3 };
 
 typedef struct bus_state {
@@ -58,12 +58,8 @@ const vector<bus_state> states(
         { IOWrite, IO_STATUS, 0x00,     "Disable SPI transaction" },
         { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
         { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
-        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 23-16" },
-        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 15-08" },
-        { IOWrite, IO_SPI_DUAL, 0x00,   "Write SPI address 07-00" },
-        { IOWrite, IO_SPI_DUAL, 0xff,   "Write SPI dummy byte" },
-        { IORead, IO_SPI_DUAL, 0xef,    "Read manufacturer ID" },
-        { IORead, IO_SPI_DUAL, 0x15,    "Read device ID" },
+        { IORead, IO_STATUS, 0x00,      "Confirm dual-I/O command disabled SPI" },
+        { IORead, 0x200, 0xff,          "Dummy read to extend trace" },
     }
 );
 
@@ -101,7 +97,7 @@ int main(int argc, char **argv) {
     tb->IORQ = tb->MREQ = tb->RD = tb->WR = tb->M1 = 1;
 
     // What is D driven to by the bus?
-    vluint8_t driven_d = 0xff, driven_di = 1, driven_do = 1;
+    vluint8_t driven_d = 0xff;
 
     // Set up numbers as base-16, 0-padded, right-aligned
     cout << hex << setfill('0') << setw(2) << right;
@@ -118,8 +114,6 @@ int main(int argc, char **argv) {
         tb->eval();
         if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
         if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
-        if (!tb->fpga20__DOT__spi_sdo_en) tb->SPI_SDO = driven_do;
-        if (!tb->fpga20__DOT__spi_sdi_en) tb->SPI_SDI = driven_di;
 
         double next_phi = phi_ticks/(PHI_FREQ*2);
         double next_osc = osc_ticks/(OSC_FREQ*2);
@@ -140,19 +134,11 @@ int main(int argc, char **argv) {
 
         if (tfp) tfp->dump(tick - 1);
         tb->eval();
-        if (!tb->fpga20__DOT__spi_sdo_en) tb->SPI_SDO = driven_do;
-        if (!tb->fpga20__DOT__spi_sdi_en) tb->SPI_SDI = driven_di;
         if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
         if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
 
         for (peripheral *p : peripherals) {
             p->eval(tb, elapsed);
-        }
-        driven_di = tb->SPI_SDI;
-        driven_do = tb->SPI_SDO;
-
-        if (flash.line_conflicts(tb)) {
-            cout << "ERROR: SDI/SDO drive conflict between FPGA and Flash" << endl;
         }
 
         // check for edges on signals of interest
