@@ -1,11 +1,33 @@
+`default_nettype none
+
 /* verilator lint_off UNUSED */
-/* verilator lint_off UNDRIVEN */
-module fpga20(PHI, CLK1, LED1, LED2, I2C_SDA, I2C_SCL, A, D, MREQ, IORQ, RD, WR, M1, WAIT, SPI_SDO, SPI_SDI, SPI_SCK, SPI_SS);
+module fpga20(
+    PHI,
+    CLK1,
+    LED1,
+    LED2,
+    I2C_SDA,
+    I2C_SCL,
+    A,
+    D,
+    MREQ,
+    IORQ,
+    RD,
+    WR,
+    M1,
+    WAIT,
+    SPI_SDO,
+    SPI_SDI,
+    SPI_SCK,
+    SPI_SS,
+    S0,
+    S1,
+    WARMBOOT);
 
 input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
 inout   [19:0]  A;
 inout   [7:0]   D;
-output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO;
+output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, S0, S1, WARMBOOT;
 inout           WAIT, I2C_SDA;
 
 parameter [15:0] ADDR_STATUS    = 16'h0100,
@@ -26,7 +48,9 @@ reg status_led0,
     status_clk1,
     status_spi,
     warmboot_s0,
-    warmboot_s1;
+    warmboot_s1,
+    warmboot_en,
+    warmboot_delay;
 wire [7:0] status_reg;
 assign status_reg = {
     1'b0, warmboot_s1, warmboot_s0, status_spi,
@@ -40,6 +64,8 @@ initial begin
     status_spi = 0;
     warmboot_s0 = 0;
     warmboot_s1 = 0;
+    warmboot_en = 0;
+    warmboot_delay = 0;
 end
 
 wire io_read, io_write, phi_read, phi_edge;
@@ -73,6 +99,9 @@ task spi_begin();
     spi_wait <= 0;
 endtask
 
+// Delay the warm boot activation signal one clock cycle to allow S0 and S1 to settle.
+always @(posedge CLK1) warmboot_delay <= warmboot_en;
+
 // CPU bus I/O
 always @(posedge CLK1) begin
     read_data_reg <= io_read &&
@@ -96,11 +125,9 @@ always @(posedge CLK1) begin
                 case (A[15:0])
                     ADDR_STATUS: begin
                         spi_command <= ~status_spi & D[4];
-                        { warmboot_s1, warmboot_s0, status_spi,
-                            status_clk1, status_clk0, status_led1, status_led0 } <= D[6:0];
+                        { warmboot_en, warmboot_s1, warmboot_s0, status_spi,
+                            status_clk1, status_clk0, status_led1, status_led0 } <= D;
                         bus_state <= BUS_COMPLETE;
-                        if (D[7]) begin
-                        end
                     end
                     ADDR_SPI_DATA: begin
                         if (spi_command && (D == 8'h3b || D == 8'h6B || D == 8'hEB || D == 8'hBB
@@ -174,5 +201,9 @@ assign LED1 = status_clk0 ? blink1 : status_led0;
 assign LED2 = status_clk1 ? blink2 : status_led1;
 assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction == SPI_WRITE) ? spi_byte[7] : 1'b1;
 assign SPI_SCK = (bus_state != BUS_SPI_TXN) | ~spi_phase;
+
+assign S0 = warmboot_s0;
+assign S1 = warmboot_s1;
+assign WARMBOOT = warmboot_delay;
 
 endmodule
