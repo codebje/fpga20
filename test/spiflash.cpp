@@ -10,7 +10,6 @@
 spiflash::spiflash() {
     state = Idle;
     xmit_byte = 0;
-    is_xmit = false;
     recv_byte = 0;
     bit = 0;
 }
@@ -30,19 +29,11 @@ void spiflash::eval(Vfpga20 *module, double time) {
             // Mode 0: SCK is already low, get first bit onto MISO
             // Mode 3: SCK is high, shift when it falls
             state = module->SPI_SCK ? Latch : Shift;
-            if (state == Shift) {
-                //if (is_xmit) {
-                    //module->SPI_SDI = (xmit_byte >> 7) & 1;
-                    //xmit_byte <<= 1;
-                //}
-            }
             break;
         // in the Shift state wait for SCK high, then latch
         case Shift:
             if (module->SPI_SCK) {
-                if (!is_xmit) {
-                    recv_byte = (recv_byte << 1) | (module->SPI_SDO & 1);
-                }
+                recv_byte = (recv_byte << 1) | (module->SPI_SDO & 1);
                 if (++bit == 8) {
                     bit = 0;
                     execute();
@@ -53,7 +44,7 @@ void spiflash::eval(Vfpga20 *module, double time) {
         // in the Latch state wait for SCK low, then shift
         case Latch:
             if (!module->SPI_SCK) {
-                if (is_xmit) module->SPI_SDI = (xmit_byte >> 7) & 1;
+                module->SPI_SDI = (xmit_byte >> 7) & 1;
                 xmit_byte <<= 1;
                 state = Shift;
             }
@@ -62,16 +53,14 @@ void spiflash::eval(Vfpga20 *module, double time) {
 }
 
 void spiflash::execute() {
-    printf("spi received byte %02x (command=%02x, is_xmit=%d, address=%d)\n", recv_byte, command, is_xmit, address);
     if (command == 0) {
         switch (recv_byte) {
             case 0x90:
                 command = 0x90;
                 address = 0;
-                is_xmit = false;
+                xmit_byte = 0xff;
                 break;
             default:
-                is_xmit = false;
                 break;
         }
     } else {
@@ -81,22 +70,18 @@ void spiflash::execute() {
                 address++;
                 switch (address) {
                     case 4:
-                        is_xmit = true;
                         xmit_byte = 0xef;
                         break;
                     case 5:
-                        is_xmit = true;
                         xmit_byte = 0x15;
                         break;
                     default:
-                        xmit_byte = 0;
-                        is_xmit = false;
+                        xmit_byte = 0xff;
                         break;
                 }
                 break;
             default:
                 printf("bogus SPI command %02x\n", command);
-                is_xmit = false;
                 break;
         }
     }

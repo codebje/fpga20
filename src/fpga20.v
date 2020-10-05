@@ -24,10 +24,13 @@ reg status_led0,
     status_led1,
     status_clk0,
     status_clk1,
-    status_spi;
+    status_spi,
+    warmboot_s0,
+    warmboot_s1;
 wire [7:0] status_reg;
 assign status_reg = {
-    3'b0, status_spi, status_clk1, status_clk0, status_led1, status_led0
+    1'b0, warmboot_s1, warmboot_s0, status_spi,
+    status_clk1, status_clk0, status_led1, status_led0
 };
 initial begin
     status_led0 = 0;
@@ -35,6 +38,8 @@ initial begin
     status_clk0 = 1;
     status_clk1 = 1;
     status_spi = 0;
+    warmboot_s0 = 0;
+    warmboot_s1 = 0;
 end
 
 wire io_read, io_write, phi_read, phi_edge;
@@ -91,8 +96,11 @@ always @(posedge CLK1) begin
                 case (A[15:0])
                     ADDR_STATUS: begin
                         spi_command <= ~status_spi & D[4];
-                        { status_spi, status_clk1, status_clk0, status_led1, status_led0 } <= D[4:0];
+                        { warmboot_s1, warmboot_s0, status_spi,
+                            status_clk1, status_clk0, status_led1, status_led0 } <= D[6:0];
                         bus_state <= BUS_COMPLETE;
+                        if (D[7]) begin
+                        end
                     end
                     ADDR_SPI_DATA: begin
                         if (spi_command && (D == 8'h3b || D == 8'h6B || D == 8'hEB || D == 8'hBB
@@ -164,7 +172,7 @@ assign D = read_data_reg ? data_reg : 8'bz;
 assign SPI_SS = ~status_spi;
 assign LED1 = status_clk0 ? blink1 : status_led0;
 assign LED2 = status_clk1 ? blink2 : status_led1;
-assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction = SPI_WRITE) ? spi_byte[7] : 1'b1;
+assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction == SPI_WRITE) ? spi_byte[7] : 1'b1;
 assign SPI_SCK = (bus_state != BUS_SPI_TXN) | ~spi_phase;
 
 endmodule

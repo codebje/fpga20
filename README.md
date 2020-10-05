@@ -62,7 +62,7 @@ Port 0100 sets or reports the status of the FPGA system controller.
 
 If CLK0 is set, LED0 will oscillate at approx. 1.49Hz, switching User LED 1 on and off. CLK1 controls LED1 and User LED 2 at PHI/2^24, which is approx. 1.1Hz at 18.432MHz. If CLK0/CLK1 is set, the values in LED0/LED1 have no effect.
 
-The SPI bit must be written high to begin a transaction with the Flash IC. While it is high, the Flash's chip select line will be active. A write to the SPI data I/O port will transmit a byte to the Flash IC, while a read from the I/O port will read a byte. During a read, MOSI is 
+The SPI bit must be written high to begin a transaction with the Flash IC. While it is high, the Flash's chip select line will be active. A write to the SPI data I/O port will transmit a byte to the Flash IC, while a read from the I/O port will read a byte. During a read, MOSI is held high to prevent an incorrect read resulting in unpredictable data being sent to the device.
 
 ## CPU interface
 

@@ -11,7 +11,6 @@ private:
     uint8_t command;
     uint32_t address;
     uint8_t xmit_byte;
-    bool is_xmit;
     uint8_t recv_byte;
     uint8_t bit;
 public:

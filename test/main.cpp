@@ -63,6 +63,31 @@ const vector<bus_state> states(
     }
 );
 
+inline bool is_atty(const std::ostream& stream)
+{
+    return &stream == &std::cout && isatty(fileno(stdout));
+}
+
+inline std::ostream& success(std::ostream& stream)
+{
+    if (is_atty(stream)) {
+        stream << "\033[32m OK\033[00m";
+    } else {
+        stream << " OK";
+    }
+    return stream;
+}
+
+inline std::ostream& failure(std::ostream& stream)
+{
+    if (is_atty(stream)) {
+        stream << "\033[31m FAIL\033[00m";
+    } else {
+        stream << " FAIL";
+    }
+    return stream;
+}
+
 int main(int argc, char **argv) {
     // Initialize Verilators variables
     Verilated::commandArgs(argc, argv);
@@ -156,7 +181,7 @@ int main(int argc, char **argv) {
                         if (state->op == IORead) tb->RD = 0;
                         if (state->op == IOWrite) {
                             tb->D = driven_d = state->byte;
-                            cout << state->desc << ": OK" << endl;
+                            cout << setw(70) << setfill('.') << left << state->desc << success << endl;
                         }
                         cycle = T2;
                     }
@@ -190,12 +215,12 @@ int main(int argc, char **argv) {
                     if (!phi_state) {
                         // T3 falls: latch data for reads, /IORQ, /RD, /WR go high, data goes high
                         if (state->op == IORead) {
-                            cout << state->desc << ": ";
+                            cout << setw(70) << setfill('.') << left << state->desc;
                             if (tb->D != state->byte) {
-                                cout << "FAIL (was: 0x" << setw(2) << (unsigned)tb->D << ", expected: 0x";
+                                cout << failure << " (was: 0x" << setw(2) << (unsigned)tb->D << ", expected: 0x";
                                 cout << setw(2) << (unsigned)state->byte << ")";
                             } else {
-                                cout << "OK";
+                                cout << success;
                             }
                             cout << endl;
                         }
