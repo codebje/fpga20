@@ -59,6 +59,9 @@ const vector<bus_state> states(
         { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
         { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
         { IORead, IO_STATUS, 0x00,      "Confirm dual-I/O command disabled SPI" },
+        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
+        { IORead, IO_SPI_DATA, 0xff,    "Read junk" },
+        { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
         { IORead, 0x200, 0xff,          "Dummy read to extend trace" },
     }
 );
@@ -119,10 +122,7 @@ int main(int argc, char **argv) {
     cpu_cycle cycle = T1;
 
     // "reset" the CPU
-    tb->IORQ = tb->MREQ = tb->RD = tb->WR = tb->M1 = 1;
-
-    // What is D driven to by the bus?
-    vluint8_t driven_d = 0xff;
+    tb->IORQ = tb->RD = tb->WR = tb->M1 = 1;
 
     // Set up numbers as base-16, 0-padded, right-aligned
     cout << hex << setfill('0') << setw(2) << right;
@@ -137,8 +137,6 @@ int main(int argc, char **argv) {
         // Let any combinatorial changes from the CPU settle
         // Verilator doesn't handle tri-state logic
         tb->eval();
-        if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
-        if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
 
         double next_phi = phi_ticks/(PHI_FREQ*2);
         double next_osc = osc_ticks/(OSC_FREQ*2);
@@ -147,20 +145,18 @@ int main(int argc, char **argv) {
             phi_ticks++;
             tick = 1e6*elapsed;
             phi_state = 1 - phi_state;
-            tb->PHI = phi_state;
+            tb->i_phi = phi_state;
             phi_clocked = true;
         } else {
             elapsed = next_osc;
             osc_ticks++;
             tick = 1e6*elapsed;
             osc_state = 1 - osc_state;
-            tb->CLK1 = osc_state;
+            tb->i_clk = osc_state;
         }
 
         if (tfp) tfp->dump(tick - 1);
         tb->eval();
-        if (!tb->fpga20__DOT__read_data_reg) tb->D = driven_d;
-        if (tb->fpga20__DOT__wait_en != 1) tb->WAIT = 1;
 
         for (peripheral *p : peripherals) {
             p->eval(tb, elapsed);
@@ -172,7 +168,7 @@ int main(int argc, char **argv) {
             switch (cycle) {
                 case T1:
                     if (phi_state) {
-                        tb->A = state->address;
+                        tb->i_addr = state->address;
                     }
                     // check for falling edge
                     if (!phi_state) {
@@ -180,7 +176,7 @@ int main(int argc, char **argv) {
                         tb->IORQ = 0;
                         if (state->op == IORead) tb->RD = 0;
                         if (state->op == IOWrite) {
-                            tb->D = driven_d = state->byte;
+                            tb->i_data = state->byte;
                             cout << setw(70) << setfill('.') << left << state->desc << success << endl;
                         }
                         cycle = T2;
@@ -197,10 +193,10 @@ int main(int argc, char **argv) {
                     }
                     break;
                 case TW:
-                    if (phi_state) latched_wait = tb->WAIT;
+                    if (phi_state) latched_wait = tb->waitstate;
                     // TW falls: sample /WAIT
                     if (!phi_state) {
-                        if (!latched_wait) {
+                        if (latched_wait) {
                             wait_cycles++;
                             if (wait_cycles > 10) {
                                 cout << "ERROR: More than 10 wait cycles elapsed." << endl;
@@ -216,8 +212,9 @@ int main(int argc, char **argv) {
                         // T3 falls: latch data for reads, /IORQ, /RD, /WR go high, data goes high
                         if (state->op == IORead) {
                             cout << setw(70) << setfill('.') << left << state->desc;
-                            if (tb->D != state->byte) {
-                                cout << failure << " (was: 0x" << setw(2) << (unsigned)tb->D << ", expected: 0x";
+                            vluint8_t output = tb->o_data_en ? tb->o_data : 0xff;
+                            if (output != state->byte) {
+                                cout << failure << " (was: 0x" << setw(2) << (unsigned)output << ", expected: 0x";
                                 cout << setw(2) << (unsigned)state->byte << ")";
                             } else {
                                 cout << success;
@@ -227,7 +224,6 @@ int main(int argc, char **argv) {
                         state++;
                         cycle = T1;
                         tb->IORQ = tb->RD = tb->WR = 1;
-                        driven_d = 0xff;
                     }
                     break;
             }

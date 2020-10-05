@@ -2,40 +2,40 @@
 
 /* verilator lint_off UNUSED */
 module fpga20(
-    PHI,
-    CLK1,
-    LED1,
-    LED2,
-    I2C_SDA,
-    I2C_SCL,
-    A,
-    D,
-    MREQ,
+    i_phi,              // CPU clock: 18.432MHz
+    i_clk,              // FPGA clock: 100MHz
+    o_leds,             // user
+    i_addr,             // address bus
+    i_data,             // data bus in
+    o_data,             // data bus out
+    o_data_en,          // write enable for o_data
     IORQ,
     RD,
     WR,
     M1,
-    WAIT,
+    waitstate,
     SPI_SDO,
     SPI_SDI,
     SPI_SCK,
     SPI_SS,
-    S0,
-    S1,
-    WARMBOOT);
+    warmboot_s0,
+    warmboot_s1,
+    warmboot);
 
-input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
-input   [19:0]  A;
-inout   [7:0]   D;
-output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, S0, S1, WARMBOOT;
-inout           WAIT, I2C_SDA;
+input           i_clk, i_phi, IORQ, RD, WR, M1, SPI_SDI;
+input   [19:0]  i_addr;
+input   [7:0]   i_data;
+output  [7:0]   o_data;
+output  [1:0]   o_leds;
+output          o_data_en, SPI_SS, SPI_SCK, SPI_SDO, warmboot, waitstate;
+output reg      warmboot_s0, warmboot_s1;
 
 parameter [15:0] ADDR_STATUS    = 16'h0100,
                  ADDR_SPI_DATA  = 16'h0104;
 
 // keep the LEDs blinking along
 wire blink1, blink2;
-leds p0 (PHI, CLK1, blink1, blink2);
+leds p0 (i_phi, i_clk, blink1, blink2);
 
 // I/O read line
 reg read_data_reg;
@@ -47,10 +47,8 @@ reg status_led0,
     status_clk0,
     status_clk1,
     status_spi,
-    warmboot_s0,
-    warmboot_s1,
     warmboot_en,
-    warmboot_delay;
+    warmboot;
 wire [7:0] status_reg;
 assign status_reg = {
     1'b0, warmboot_s1, warmboot_s0, status_spi,
@@ -65,14 +63,14 @@ initial begin
     warmboot_s0 = 0;
     warmboot_s1 = 0;
     warmboot_en = 0;
-    warmboot_delay = 0;
+    warmboot = 0;
 end
 
 wire io_read, io_write, phi_read, phi_edge;
-stabilizer stab_io_read(!IORQ & !RD, io_read, CLK1);
-stabilizer stab_io_write(!IORQ & !WR, io_write, CLK1);
-stabilizer stab_phi(PHI, phi_read, CLK1);
-edgedetect edge_phi(phi_read, phi_edge, CLK1);
+stabilizer stab_io_read(!IORQ & !RD, io_read, i_clk);
+stabilizer stab_io_write(!IORQ & !WR, io_write, i_clk);
+stabilizer stab_phi(i_phi, phi_read, i_clk);
+edgedetect edge_phi(phi_read, phi_edge, i_clk);
 
 // SPI control registers: the current SPI mode
 parameter SPI_READ      = 1'b0,
@@ -100,17 +98,17 @@ task spi_begin();
 endtask
 
 // Delay the warm boot activation signal one clock cycle to allow S0 and S1 to settle.
-always @(posedge CLK1) warmboot_delay <= warmboot_en;
+always @(posedge i_clk) warmboot <= warmboot_en;
 
 // CPU bus I/O
-always @(posedge CLK1) begin
+always @(posedge i_clk) begin
     read_data_reg <= io_read &&
-        (A[15:0] == ADDR_STATUS || A[15:0] == ADDR_SPI_DATA);
+        (i_addr[15:0] == ADDR_STATUS || i_addr[15:0] == ADDR_SPI_DATA);
 
     case (bus_state)
         BUS_IDLE: begin
             if (io_read) begin
-                case (A[15:0])
+                case (i_addr[15:0])
                     ADDR_STATUS: begin
                         data_reg <= status_reg;
                         bus_state <= BUS_COMPLETE;
@@ -122,16 +120,16 @@ always @(posedge CLK1) begin
                     default: ;
                 endcase
             end else if (io_write) begin
-                case (A[15:0])
+                case (i_addr[15:0])
                     ADDR_STATUS: begin
-                        spi_command <= ~status_spi & D[4];
+                        spi_command <= ~status_spi & i_data[4];
                         { warmboot_en, warmboot_s1, warmboot_s0, status_spi,
-                            status_clk1, status_clk0, status_led1, status_led0 } <= D;
+                            status_clk1, status_clk0, status_led1, status_led0 } <= i_data;
                         bus_state <= BUS_COMPLETE;
                     end
                     ADDR_SPI_DATA: begin
-                        if (spi_command && (D == 8'h3b || D == 8'h6B || D == 8'hEB || D == 8'hBB
-                            || D == 8'h77 || D == 8'h32 || D == 8'h92 || D == 8'h94)) begin
+                        if (spi_command && (i_data == 8'h3b || i_data == 8'h6B || i_data == 8'hEB || i_data == 8'hBB
+                            || i_data == 8'h77 || i_data == 8'h32 || i_data == 8'h92 || i_data == 8'h94)) begin
                             // These command words are all forbidden: disable
                             // SPI if they're encountered. They're all dual or
                             // quad I/O which would result in the FPGA and the
@@ -141,7 +139,7 @@ always @(posedge CLK1) begin
                         end else begin
                             spi_direction <= SPI_WRITE;
                             spi_begin();
-                            spi_byte <= D;
+                            spi_byte <= i_data;
                         end
                     end
                     default: ;
@@ -192,18 +190,14 @@ always @(posedge CLK1) begin
 
 end
 
-wire wait_en = (bus_state == BUS_SPI_TXN && spi_wait);
+assign waitstate = (bus_state == BUS_SPI_TXN && spi_wait);
 
-assign WAIT = wait_en ? 0 : 1'bz;
-assign D = read_data_reg ? data_reg : 8'bz;
+assign o_data = data_reg;
+assign o_data_en = read_data_reg;
 assign SPI_SS = ~status_spi;
-assign LED1 = status_clk0 ? blink1 : status_led0;
-assign LED2 = status_clk1 ? blink2 : status_led1;
+assign o_leds[0] = status_clk0 ? blink1 : status_led0;
+assign o_leds[1] = status_clk1 ? blink2 : status_led1;
 assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction == SPI_WRITE) ? spi_byte[7] : 1'b1;
 assign SPI_SCK = (bus_state != BUS_SPI_TXN) | ~spi_phase;
-
-assign S0 = warmboot_s0;
-assign S1 = warmboot_s1;
-assign WARMBOOT = warmboot_delay;
 
 endmodule

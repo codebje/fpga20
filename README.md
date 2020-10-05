@@ -8,6 +8,23 @@ The FPGA on the TRS-20's CPU board serves several roles:
   - Interrupt controller for off-board peripherals
   - General FPGA playground for unspecified future use
 
+## Current status
+
+  - [x] Automated testing
+  - [ ] Automated verification
+  - [ ] Tested on iCEstick
+  - [ ] Deployed to CPU board
+  - [x] SPI access to Flash
+  - [x] ... including writes
+  - [ ] I2C master
+  - [x] Warm boot controller
+  - [ ] Interrupt controller
+
+  - LUTs used: 190/1280 (14%)
+  - RAM blocks used: 0/16 (0%)
+  - Max. frequency for CLK1: 160.49MHz
+  - Max. frequency for PHI: 190.33MHz
+
 ## Module guide
 
   - [toplevel.v](src/toplevel.v): the top-level module, wiring other modules to exernal pins
@@ -86,7 +103,7 @@ Not yet implemented.
 
 Not yet implemented.
 
-## Decision log
+# Decision log
 
 ### 04/10/2020 SPI master: prevent dual and quad mode I/O
 
@@ -100,4 +117,4 @@ To resolve this, the current release instead forces single mode I/O. Any dual or
 
 The current SPI master code is not in a separate module. There's a lot of intimate sharing of knowledge between the SPI pathways and the Z180 bus pathways. It would be possible to separate these out, but doing so would require a ton of boilerplate to wire stuff back up together - or extra wait states. Since it's so ridiculously simple, I've chosen to just leave it in the main module.
 
-Adding the warmboot control in exposed that the test harness doesn't like `SB_WARMBOOT`, unsurprisingly. Splitting out a toplevel to wire up FPGA pins to internal signals sort-of resolves this, but needs more work to move the tristate logic out to the toplevel too.
+Adding the warmboot control in exposed that the test harness doesn't like `SB_WARMBOOT`, unsurprisingly. Splitting out a toplevel to wire up FPGA pins to internal signals resolves this, and invites more work to move the tristate logic out to the toplevel too. This simplifies the test harness.
