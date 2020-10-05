@@ -25,7 +25,7 @@ module fpga20(
     WARMBOOT);
 
 input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
-inout   [19:0]  A;
+input   [19:0]  A;
 inout   [7:0]   D;
 output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, S0, S1, WARMBOOT;
 inout           WAIT, I2C_SDA;
@@ -35,7 +35,7 @@ parameter [15:0] ADDR_STATUS    = 16'h0100,
 
 // keep the LEDs blinking along
 wire blink1, blink2;
-poc p0 (PHI, CLK1, blink1, blink2);
+leds p0 (PHI, CLK1, blink1, blink2);
 
 // I/O read line
 reg read_data_reg;

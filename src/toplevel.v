@@ -22,7 +22,7 @@ module toplevel(
 );
 
 input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
-inout   [19:0]  A;
+input   [19:0]  A;
 inout   [7:0]   D;
 output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO;
 inout           WAIT, I2C_SDA;
