@@ -63,4 +63,3 @@ set_io -nowarn SPI_SCK 48
 set_io -nowarn SPI_SS 49
 set_frequency PHI 18.432
 set_frequency CLK1 100
-set_frequency I2C_SCL 0.4

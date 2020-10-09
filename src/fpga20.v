@@ -31,7 +31,10 @@ output          o_data_en, SPI_SS, SPI_SCK, SPI_SDO, warmboot, waitstate;
 output reg      warmboot_s0, warmboot_s1;
 
 parameter [15:0] ADDR_STATUS    = 16'h0100,
+                 ADDR_VERSION   = 16'h0101,
                  ADDR_SPI_DATA  = 16'h0104;
+
+localparam [7:0] VERSION = 8'd1;
 
 // keep the LEDs blinking along
 wire blink1, blink2;
@@ -78,9 +81,19 @@ parameter SPI_READ      = 1'b0,
 reg spi_direction;
 reg [7:0] spi_byte;
 reg [2:0] spi_bit;
+reg spi_output;
 reg spi_phase;
 reg spi_wait;
 reg spi_command;
+
+initial begin
+    spi_output = 1;
+    spi_phase = 0;
+    spi_wait = 0;
+    spi_command = 0;
+    spi_byte = 8'hff;
+    spi_bit = 0;
+end
 
 parameter [1:0] BUS_IDLE        = 2'b00,
                 BUS_COMPLETE    = 2'b01,
@@ -90,36 +103,55 @@ reg [1:0] bus_state;
 initial bus_state = BUS_IDLE;
 
 task spi_begin();
-    bus_state <= BUS_SPI_TXN;
-    spi_command <= 0;
-    spi_bit <= 7;
-    spi_phase <= 1;
-    spi_wait <= 0;
 endtask
 
 // Delay the warm boot activation signal one clock cycle to allow S0 and S1 to settle.
 always @(posedge i_clk) warmboot <= warmboot_en;
 
-// CPU bus I/O
+// Wait state control
+always @(posedge i_clk) begin
+    // Changes to /WAIT need to be at least 3ns before PHI rises, as there's a '1g175 FF clocking changes through to
+    // the CPU. The phi_edge signal trails the real rising edge by 20-30ns, and leads the next rising edge by 24-34ns.
+    // This gives plenty of time for a change to /WAIT to settle before the '1g175 clocks it in.
+    if (phi_edge) begin
+        // Hold /WAIT while the SPI transaction is in progress. Due to the '1g175 this will add a spurious wait to
+        // the CPU's pipeline; having a flag to indicate an SPI transaction has less than 80ns to go would allow a
+        // more efficient alteration of /WAIT.
+        spi_wait <= bus_state == BUS_SPI_TXN;
+    end
+end
+
+// Direction control for D
 always @(posedge i_clk) begin
     read_data_reg <= io_read &&
-        (i_addr[15:0] == ADDR_STATUS || i_addr[15:0] == ADDR_SPI_DATA);
+        (i_addr[15:0] == ADDR_STATUS
+        || i_addr[15:0] == ADDR_VERSION
+        || i_addr[15:0] == ADDR_SPI_DATA);
+end
 
+// CPU and SPI bus I/O
+always @(posedge i_clk) begin
     case (bus_state)
         BUS_IDLE: begin
             if (io_read) begin
+                spi_direction <= SPI_READ;
                 case (i_addr[15:0])
                     ADDR_STATUS: begin
                         data_reg <= status_reg;
                         bus_state <= BUS_COMPLETE;
                     end
+                    ADDR_VERSION: begin
+                        data_reg <= VERSION;
+                        bus_state <= BUS_COMPLETE;
+                    end
                     ADDR_SPI_DATA: begin
-                        spi_direction <= SPI_READ;
-                        spi_begin();
+                        bus_state <= BUS_SPI_TXN;
+                        spi_byte <= 0;
                     end
                     default: ;
                 endcase
             end else if (io_write) begin
+                spi_direction <= SPI_WRITE;
                 case (i_addr[15:0])
                     ADDR_STATUS: begin
                         spi_command <= ~status_spi & i_data[4];
@@ -137,9 +169,9 @@ always @(posedge i_clk) begin
                             status_spi <= 0;
                             bus_state <= BUS_COMPLETE;
                         end else begin
-                            spi_direction <= SPI_WRITE;
-                            spi_begin();
-                            spi_byte <= i_data;
+                            { spi_output, spi_byte[7:0] } <= { i_data, 1'b1 };
+                            bus_state <= BUS_SPI_TXN;
+                            spi_command <= 0;
                         end
                     end
                     default: ;
@@ -151,53 +183,37 @@ always @(posedge i_clk) begin
                 bus_state <= BUS_IDLE;
         end
         BUS_SPI_TXN: begin
-            // modify spi_wait only after detecting a PHI rising edge
-            // phi_edge trails the real edge by 20-30ns, and leads the
-            // next rising edge by 24-34ns. Altering /WAIT at this
-            // moment affords the '1g175 its 3ns setup time, and doesn't
-            // require any stabilization back to PHI. The '1g175 will
-            // however delay any changes to /WAIT from the CPU until that
-            // following edge. A wait state is inserted only if there's
-            // more than four bits left to receive in a READ: with four
-            // or fewer bits it will take up to 80ns to put data on the
-            // bus. After /WAIT is deasserted it will take 14-24ns for
-            // the next rising edge of PHI to pass that through, then 1.5PHI
-            // or ~81ns before T3 falls.
-            if (phi_edge) begin
-                if (spi_direction == SPI_READ && spi_bit > 3) begin
-                    spi_wait <= 1;
-                end else begin
-                    spi_wait <= 0;
+            // The SPI code is contained in this always block to avoid two clock delays on every transfer
+            // for strobe signalling.
+            if (spi_phase) begin
+                // if the clock is RISING, latch input
+                // moved here because SPI_SCK is one clock cycle behind
+                spi_byte[0] <= SPI_SDI;
+                // if the clock is FALLING, shift data
+                { spi_output, spi_byte[7:1] } <= spi_byte;
+                if (spi_direction != SPI_WRITE) begin
+                    spi_output <= 1;
                 end
-            end
-            if (spi_phase) begin // latch phase
-                if (spi_direction == SPI_READ) begin
-                    spi_byte[0] <= SPI_SDI;
-                end
-                spi_bit <= spi_bit - 1;
-            end else begin // shift phase
                 if (spi_bit == 7) begin
-                    bus_state <= (io_read || io_write) ? BUS_COMPLETE : BUS_IDLE;
-                    data_reg <= spi_byte;
-                end else begin
-                    spi_byte <= { spi_byte[6:0], 1'b0 };
+                    bus_state <= BUS_COMPLETE;
+                    data_reg <= { spi_byte[6:0], SPI_SDI };
                 end
+                spi_bit <= spi_bit + 1;
             end
             spi_phase <= ~spi_phase;
         end
         default: bus_state <= BUS_IDLE;
     endcase
-
 end
 
-assign waitstate = (bus_state == BUS_SPI_TXN && spi_wait);
+assign waitstate = spi_wait;
 
 assign o_data = data_reg;
 assign o_data_en = read_data_reg;
 assign SPI_SS = ~status_spi;
 assign o_leds[0] = status_clk0 ? blink1 : status_led0;
 assign o_leds[1] = status_clk1 ? blink2 : status_led1;
-assign SPI_SDO = (bus_state == BUS_SPI_TXN && spi_direction == SPI_WRITE) ? spi_byte[7] : 1'b1;
-assign SPI_SCK = (bus_state != BUS_SPI_TXN) | ~spi_phase;
+assign SPI_SDO = spi_output;
+assign SPI_SCK = spi_phase;
 
 endmodule

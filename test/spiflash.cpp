@@ -69,10 +69,10 @@ void spiflash::execute() {
             case 0x92:
                 address++;
                 switch (address) {
-                    case 4:
+                    case 3:
                         xmit_byte = 0xef;
                         break;
-                    case 5:
+                    case 4:
                         xmit_byte = 0x15;
                         break;
                     default:

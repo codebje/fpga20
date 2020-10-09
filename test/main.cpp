@@ -52,7 +52,6 @@ const vector<bus_state> states(
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 23-16" },
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 15-08" },
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 07-00" },
-        { IOWrite, IO_SPI_DATA, 0xff,   "Write SPI dummy byte" },
         { IORead, IO_SPI_DATA, 0xef,    "Read manufacturer ID" },
         { IORead, IO_SPI_DATA, 0x15,    "Read device ID" },
         { IOWrite, IO_STATUS, 0x00,     "Disable SPI transaction" },
@@ -124,9 +123,6 @@ int main(int argc, char **argv) {
     // "reset" the CPU
     tb->IORQ = tb->RD = tb->WR = tb->M1 = 1;
 
-    // Set up numbers as base-16, 0-padded, right-aligned
-    cout << hex << setfill('0') << setw(2) << right;
-
     // /WAIT is latched at the start of T2/TW
     bool latched_wait = false;
 
@@ -196,10 +192,10 @@ int main(int argc, char **argv) {
                     if (phi_state) latched_wait = tb->waitstate;
                     // TW falls: sample /WAIT
                     if (!phi_state) {
-                        if (latched_wait) {
+                        if (latched_wait || wait_cycles < 4) {
                             wait_cycles++;
-                            if (wait_cycles > 10) {
-                                cout << "ERROR: More than 10 wait cycles elapsed." << endl;
+                            if (wait_cycles > 20) {
+                                cout << "ERROR: More than 20 wait cycles elapsed." << endl;
                                 state = states.end();
                             }
                         } else {
@@ -214,6 +210,8 @@ int main(int argc, char **argv) {
                             cout << setw(70) << setfill('.') << left << state->desc;
                             vluint8_t output = tb->o_data_en ? tb->o_data : 0xff;
                             if (output != state->byte) {
+                                // Set up numbers as base-16, 0-padded, right-aligned
+                                cout << hex << setfill('0') << right;
                                 cout << failure << " (was: 0x" << setw(2) << (unsigned)output << ", expected: 0x";
                                 cout << setw(2) << (unsigned)state->byte << ")";
                             } else {

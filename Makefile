@@ -20,6 +20,7 @@ $(BIN_DIR)/$(TARGET).asc: $(BIN_DIR)/$(TARGET).json $(PCF_SOURCE)
 
 $(BIN_DIR)/%.bin: $(BIN_DIR)/%.asc
 	icepack $^ $@
+	icetime -d hx1k -mtr $(BIN_DIR)/$*.txt $<
 
 $(BIN_DIR)/%.dot: $(SRC_DIR)/%.v
 	yosys -q -p 'proc; opt; show -prefix $(BIN_DIR)/$* -format dot;' $<
@@ -32,6 +33,16 @@ plots: .PHONY $(PLOTS)
 
 test:	$(BIN_DIR)/$(TARGET).bin .PHONY
 	make -C $(TEST_DIR)
+
+pack:	$(BIN_DIR)/pack.bin
+
+$(BIN_DIR)/pack.bin:	$(BIN_DIR)/$(TARGET).bin .PHONY
+	cp $< $(BIN_DIR)/image1.bin
+	cp $< $(BIN_DIR)/image2.bin
+	cp $< $(BIN_DIR)/image3.bin
+	cp $< $(BIN_DIR)/image4.bin
+	icemulti -v -v -v -v -c -a15 -o $@ $(BIN_DIR)/image[1234].bin
+	rm -f $(BIN_DIR)/image[1234].bin
 
 clean:
 	@rm -f bin/* obj_dir/*

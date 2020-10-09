@@ -13,7 +13,7 @@ The FPGA on the TRS-20's CPU board serves several roles:
   - [x] Automated testing
   - [ ] Automated verification
   - [ ] Tested on iCEstick
-  - [ ] Deployed to CPU board
+  - [x] Deployed to CPU board
   - [x] SPI access to Flash
   - [x] ... including writes
   - [ ] I2C master
@@ -38,6 +38,7 @@ The FPGA on the TRS-20's CPU board serves several roles:
 | Port  | Description                                                                           |
 | ----- | ------------------------------------------------------------------------------------- |
 | 0100  | Status/Control                                                                        |
+| 0101  | Version information                                                                   |
 | 0104  | SPI data                                                                              |
 
 ## Status/Control port
