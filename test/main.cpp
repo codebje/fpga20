@@ -18,9 +18,10 @@ using namespace std;
 #define PHI_FREQ        18.432
 #define OSC_FREQ        100.0
 
-const int IO_STATUS       = 0x100;
-const int IO_SPI_DATA     = 0x104;
-const int IO_SPI_DUAL     = 0x105;
+const int IO_STATUS     = 0x100;
+const int IO_SPI_DATA   = 0x104;
+
+const int MIN_WAITS     = 1;
 
 // test I/O ops: write <byte> to <address>, read <byte> from <address>
 // An I/O op will take four PHI cycles:
@@ -192,7 +193,7 @@ int main(int argc, char **argv) {
                     if (phi_state) latched_wait = tb->waitstate;
                     // TW falls: sample /WAIT
                     if (!phi_state) {
-                        if (latched_wait || wait_cycles < 4) {
+                        if (latched_wait || wait_cycles < MIN_WAITS) {
                             wait_cycles++;
                             if (wait_cycles > 20) {
                                 cout << "ERROR: More than 20 wait cycles elapsed." << endl;
