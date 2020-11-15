@@ -43,6 +43,10 @@ leds p0 (i_phi, i_clk, blink1, blink2);
 // I/O read line
 reg read_data_reg;
 reg [7:0] data_reg;
+initial begin
+    read_data_reg = 0;
+    data_reg = 8'hff;
+end
 
 // Status register
 reg status_led0,
@@ -74,6 +78,13 @@ stabilizer stab_io_read(!IORQ & !RD, io_read, i_clk);
 stabilizer stab_io_write(!IORQ & !WR, io_write, i_clk);
 stabilizer stab_phi(i_phi, phi_read, i_clk);
 edgedetect edge_phi(phi_read, phi_edge, i_clk);
+wire [19:0] addr;
+generate
+    genvar i;
+    for (i = 0; i < 20; i++) begin
+        stabilizer astab(i_addr[i], addr[i], i_clk);
+    end
+endgenerate
 
 // SPI control registers: the current SPI mode
 parameter SPI_READ      = 1'b0,
@@ -117,16 +128,8 @@ always @(posedge i_clk) begin
         // Hold /WAIT while the SPI transaction is in progress. Due to the '1g175 this will add a spurious wait to
         // the CPU's pipeline; having a flag to indicate an SPI transaction has less than 80ns to go would allow a
         // more efficient alteration of /WAIT.
-        spi_wait <= bus_state == BUS_SPI_TXN;
+        spi_wait <= (bus_state == BUS_SPI_TXN) || (bus_state == BUS_IDLE && io_write && addr[15:0] == ADDR_SPI_DATA);
     end
-end
-
-// Direction control for D
-always @(posedge i_clk) begin
-    read_data_reg <= io_read &&
-        (i_addr[15:0] == ADDR_STATUS
-        || i_addr[15:0] == ADDR_VERSION
-        || i_addr[15:0] == ADDR_SPI_DATA);
 end
 
 // CPU and SPI bus I/O
@@ -135,13 +138,15 @@ always @(posedge i_clk) begin
         BUS_IDLE: begin
             if (io_read) begin
                 spi_direction <= SPI_READ;
-                case (i_addr[15:0])
+                case (addr[15:0])
                     ADDR_STATUS: begin
                         data_reg <= status_reg;
+                        read_data_reg <= 1;
                         bus_state <= BUS_COMPLETE;
                     end
                     ADDR_VERSION: begin
                         data_reg <= VERSION;
+                        read_data_reg <= 1;
                         bus_state <= BUS_COMPLETE;
                     end
                     ADDR_SPI_DATA: begin
@@ -152,7 +157,7 @@ always @(posedge i_clk) begin
                 endcase
             end else if (io_write) begin
                 spi_direction <= SPI_WRITE;
-                case (i_addr[15:0])
+                case (addr[15:0])
                     ADDR_STATUS: begin
                         spi_command <= ~status_spi & i_data[4];
                         { warmboot_en, warmboot_s1, warmboot_s0, status_spi,
@@ -179,8 +184,10 @@ always @(posedge i_clk) begin
             end
         end
         BUS_COMPLETE: begin
-            if (!io_read && !io_write)
+            if (!io_read && !io_write) begin
+                read_data_reg <= 0;
                 bus_state <= BUS_IDLE;
+            end
         end
         BUS_SPI_TXN: begin
             // The SPI code is contained in this always block to avoid two clock delays on every transfer
@@ -197,6 +204,7 @@ always @(posedge i_clk) begin
                 if (spi_bit == 7) begin
                     bus_state <= BUS_COMPLETE;
                     data_reg <= { spi_byte[6:0], SPI_SDI };
+                    read_data_reg <= spi_direction == SPI_READ;
                 end
                 spi_bit <= spi_bit + 1;
             end

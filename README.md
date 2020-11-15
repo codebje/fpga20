@@ -119,3 +119,13 @@ To resolve this, the current release instead forces single mode I/O. Any dual or
 The current SPI master code is not in a separate module. There's a lot of intimate sharing of knowledge between the SPI pathways and the Z180 bus pathways. It would be possible to separate these out, but doing so would require a ton of boilerplate to wire stuff back up together - or extra wait states. Since it's so ridiculously simple, I've chosen to just leave it in the main module.
 
 Adding the warmboot control in exposed that the test harness doesn't like `SB_WARMBOOT`, unsurprisingly. Splitting out a toplevel to wire up FPGA pins to internal signals resolves this, and invites more work to move the tristate logic out to the toplevel too. This simplifies the test harness.
+
+### 10/10/2020 Change the `o_data_en` signal
+
+One of the slowest portions of the logic at present is testing whether the read register should be active or not. This is because a set of port values are tested - 0100, 0101, and 0104. It's also potentially got metastability problems - the `io_read` register value is stabilised but the address lines are not. `io_read` may remain asserted up to 20ns after the CPU has de-asserted `/IORQ` and `/RD`, but the address line are only guaranteed to hold their values for 5ns. It's not terribly critical if it's indeterminate whether the FPGA continues to assert data for half a clock cycle or not, but it is critical if the FPGA decides it needs to assert data during some other peripheral's I/O read because the address lines change in the 15ns of uncertainty, while the other peripheral is also asserting data.
+
+### 10/10/2020 Change the `waitstate` signal
+
+`/WR` falls after the rising edge of T2 - up to 25ns after. However, `/WAIT` needs to be set before the rising edge of the following Tw for the '1g175 to pass it through to the CPU for the falling edge of Tw. The current approach is to set `/WAIT` using a synchronised rising edge of `PHI`. This must use T2 to be set in time for Tw, but this edge is detected after 10 to 20ns. A first pass fix can catch a `/WR` fall that stabilises in the same 100MHz clock edge as T2's rise, but a redesign is required.
+
+Using `always @(posedge PHI)` is too late - `/WR` will not fall until some time between the rise of T2 and 25ns after that, so the next positive edge is Tw. `/WAIT` must be set by then for the '1g175 to clock it in.
