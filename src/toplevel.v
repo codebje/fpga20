@@ -7,6 +7,10 @@ module toplevel(
     LED2,
     I2C_SDA,
     I2C_SCL,
+    INT4,
+    INT5,
+    INT6,
+    INT7,
     A,
     D,
     MREQ,
@@ -21,10 +25,10 @@ module toplevel(
     SPI_SS
 );
 
-input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI;
+input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI, INT7;
 input   [19:0]  A;
 inout   [7:0]   D;
-output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO;
+output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, INT4, INT5, INT6;
 inout           WAIT, I2C_SDA;
 
 wire S0, S1, BOOT;
@@ -32,6 +36,11 @@ wire [1:0] leds = { LED1, LED2 };
 wire waiting;
 wire [7:0] data_out;
 wire data_en;
+
+wire spi_sdo,
+     spi_sdi,
+     spi_sck;
+wire [1:0] spi_select;
 
 fpga20 main(
     PHI, CLK1,                          // clocks: inputs
@@ -42,9 +51,18 @@ fpga20 main(
     data_en,                            // data bus: output enable
     IORQ, RD, WR, M1,                   // CPU signals
     waiting,                            // set when /WAIT should be active
-    SPI_SDO, SPI_SDI, SPI_SCK, SPI_SS,  // SPI lines
+    spi_sdo, spi_sdi, spi_sck,          // SPI lines
+    spi_select,                         // SPI select line
     S0, S1, BOOT                        // warm boot control
 );
+
+assign SPI_SDO = spi_sdo;
+assign SPI_SCK = spi_sck;
+assign INT5 = spi_sdo;
+assign INT6 = spi_sck;
+assign spi_sdi = spi_select[1] ? INT7 : SPI_SDI;
+assign SPI_SS = ~(spi_select == { 0, 1 });
+assign INT4 = ~(spi_select == { 1, 1 });
 
 assign WAIT = waiting ? 0'b0 : 1'bz;
 assign D = data_en ? data_out : 8'bz;

@@ -11,8 +11,6 @@ The FPGA on the TRS-20's CPU board serves several roles:
 ## Current status
 
   - [x] Automated testing
-  - [ ] Automated verification
-  - [ ] Tested on iCEstick
   - [x] Deployed to CPU board
   - [x] SPI access to Flash
   - [x] ... including writes
@@ -37,13 +35,13 @@ The FPGA on the TRS-20's CPU board serves several roles:
 
 | Port  | Description                                                                           |
 | ----- | ------------------------------------------------------------------------------------- |
-| 0100  | Status/Control                                                                        |
-| 0101  | Version information                                                                   |
-| 0104  | SPI data                                                                              |
+| 00F0  | LED control & warm boot (write), version (read)                                       |
+| 00F1  | SPI control and status                                                                |
+| 00F2  | SPI data                                                                              |
 
-## Status/Control port
+## Control/version port
 
-Port 0100 sets or reports the status of the FPGA system controller.
+A write to port 00F0 sets the status of the FPGA system controller. A read from port 00F0 gets the version of the controller in BCD, currently 1.0.
 
 | Bit |  Name  | Purpose                                                                        |
 | --- | ------ | ------------------------------------------------------------------------------ |
@@ -51,24 +49,46 @@ Port 0100 sets or reports the status of the FPGA system controller.
 |  1  | LED1   | State of User LED 2. Set for ON, reset for OFF.                                |
 |  2  | CLK0   | Blinks LED0 from 100MHz external oscillator if set.                            |
 |  3  | CLK1   | Blinks LED1 from CPU clock signal if set.                                      |
-|  4  | SPI    | Indicates an SPI transaction is active.                                        |
-|  5  | S0     | Warm boot selector S0.                                                         |
-|  6  | S1     | Warm boot selector S1.                                                         |
-|  7  | WBOOT  | Warm boot trigger.                                                             |
+|  4  | S0     | Warm boot selector S0.                                                         |
+|  5  | S1     | Warm boot selector S1.                                                         |
+|  6  | WBOOT  | Warm boot trigger.                                                             |
+|  7  |        | Reserved
 
 If CLK0 is set, LED0 will oscillate at approx. 1.49Hz, switching User LED 1 on and off. CLK1 controls LED1 and User LED 2 at PHI/2^24, which is approx. 1.1Hz at 18.432MHz. If CLK0/CLK1 is set, the values in LED0/LED1 have no effect.
 
-The SPI bit must be written high to begin a transaction with the Flash IC. While it is high, the Flash's chip select line will be active. A write to the SPI data I/O port will transmit a byte to the Flash IC, while a read from the I/O port will read a byte. During a read, MOSI is held high to prevent an incorrect read resulting in unpredictable data being sent to the device.
-
 When WBOOT is written high, the FPGA will reboot using the image selected by `{ S0, S1 }`.
 
-## SPI master
+# SPI control and data ports
 
-The SPI master controls only the SPI flash attached to the FPGA. The slave select line is controlled by the `SPI` bit of the Status/Control port - unless this bit is high, all other SPI actions will have no effect. Once this bit has been set high, an SPI flash command byte should be written to the SPI data port. Command bytes that would trigger dual or quad I/O modes will cause the `SPI` bit to be reset, but all other bytes including invalid commands will be sent to the flash.
+| Bit |  Name  | Purpose                                                                        |
+| --- | ------ | ------------------------------------------------------------------------------ |
+|  0  | ENABLE | Enable the slave select line for the active slave.                             |
+|  1  | SLAVE  | Selects the active SPI slave. Set LOW for Flash, HIGH for SD card.             |
+|  2  |        | Reserved: must be set to zero.                                                 |
+|  3  | BLKRD  | Block read flag: SET for a data port read to start a new SPI exchange.         |
+|  4  | CLOCK0 | Clock divider, bit 0.                                                          |
+|  5  | CLOCK1 | Clock divider, bit 1.                                                          |
+|  6  | CLOCK2 | Clock divider, bit 2.                                                          |
+|  7  | BUSY   | SET while an SPI exchange is in progress. Read-only.                           |
 
-No protection is given for reading before writing (the flash ROM will receive a command byte of 0xff), writing when the flash expects to be responding (the response data will be lost), or reading when the flash expects to be given data (the flash will get 0xff, which probably won't be right). Both reads and writes complete during the requesting CPU cycle, with reads using `/WAIT` to insert a second wait state if the CPU is only inserting one.
+A write to the SPI data port will transmit the byte on the data bus to the SPI slave, reading a byte from the slave at the same time. The byte will be available for the next read from the SPI data port. If the BLKRD bit is set, reading from the SPI data port will transmit 0xFF to the slave and read another byte, allowing bulk reads.
 
-After a transaction is complete the `SPI` bit should be reset to raise slave select and indicate to the flash that the transaction is over.
+While an exchange is in progress the read-only BUSY bit will be high. Writes to the data port will be ignored while the SPI system is busy. Reads from the data port will not begin a new exchange while the SPI system is busy, and the value written to the data bus is undefined.
+
+The three CLOCK bits set a power-of-two divider for 50MHz:
+
+| CLK2 | CLK1 | CLK0 | SPI clock speed                                                          |
+| ---- | ---- | ---- | ------------------------------------------------------------------------ |
+|   0  |   0  |   0  | 50MHz                                                                    |
+|   0  |   0  |   1  | 25MHz                                                                    |
+|   0  |   1  |   0  | 12.5MHz                                                                  |
+|   0  |   1  |   1  | 6.25MHz                                                                  |
+|   1  |   0  |   0  | 3.125MHz                                                                 |
+|   1  |   0  |   1  | 1.5625MHz                                                                |
+|   1  |   1  |   0  | 781.25kHz                                                                |
+|   1  |   1  |   1  | 390.625kHz                                                               |
+
+The SPI Flash will not allow commands that enable dual or quad I/O modes to be sent.
 
 ### ROM image map
 
@@ -129,3 +149,30 @@ One of the slowest portions of the logic at present is testing whether the read 
 `/WR` falls after the rising edge of T2 - up to 25ns after. However, `/WAIT` needs to be set before the rising edge of the following Tw for the '1g175 to pass it through to the CPU for the falling edge of Tw. The current approach is to set `/WAIT` using a synchronised rising edge of `PHI`. This must use T2 to be set in time for Tw, but this edge is detected after 10 to 20ns. A first pass fix can catch a `/WR` fall that stabilises in the same 100MHz clock edge as T2's rise, but a redesign is required.
 
 Using `always @(posedge PHI)` is too late - `/WR` will not fall until some time between the rise of T2 and 25ns after that, so the next positive edge is Tw. `/WAIT` must be set by then for the '1g175 to clock it in.
+
+### 15/11/2020 Add slow SPI on INT4/5/6/7
+
+Support a 10MHz SPI interface on INT4/5/6/7 lines to use an SD card. At 10MHz this will be a lot of PHI cycles spent in wait states, but avoids all the complexity of asynchronous SPI. Transferring one byte at 50MHz uses four wait states, at 10MHz it should take around 17 wait states.
+
+The warmboot control bits will be moved to be write-only on the version port, opening up space for the SD card's enable bit in the status/control register.
+
+The I/O ports will be adjusted to close off the holes in the address space.
+
+Done:
+  - Add a second SPI data port (0x0105) for the second device
+  - Slow clock to 10MHz for second data port, but stay at 50MHz for Flash ROM
+  - Shuffle status bits around
+  - make the choice of SS line exclusive
+  - use SS lines to determine SPI pins at top level
+  - add tests for the slower reads
+
+### 18/11/2020 rework SPI to asynchronous and re-select I/O ports
+
+The slow SPI is a _lot_ of wait state - 20 or 21 cycles all up. And that's at 10MHz, the spec requires running the clock at 400kHz for initialisation. Switch back to a single SPI data port, can't use both devices at once anyway. Use a new SPI control port: device select bit(s), enable bit, busy bit (RO), speed select bits. Writes to the SPI data port trigger a transfer (or get ignored, if busy), reads from the port return the last byte received (or partial, if you go ahead and read it without checking for busy bit).
+
+Also need a bit for 'bulk read mode' - each read triggers a new transfer with 0xff as the sent byte. Otherwise bulk reads have to do two I/Os for every byte, and that sucks.
+
+At 50MHz the CPU should be able to continually read. At slower speeds the BUSY bit should be polled - but the number of machine cycles a read will take is predictable and stable. Because the 100MHz clock and PHI aren't in phase a read may finish one cycle earlier than the guaranteed number of cycles. Verification would help here, but in general if you're slowing the clock down that much polling the BUSY bit won't hurt you.
+
+It's also time to give up on a 16-bit I/O space. I don't need that much space. Many instructions just don't let that high byte be used adequately. Only needing an 8-bit compare also makes it more plausible to do address decoding off-board. The CPU reserves 1/4th of the I/O space, the FPGA another 16 bytes, so there's 176 ports still available.
+

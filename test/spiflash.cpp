@@ -9,14 +9,14 @@
 
 spiflash::spiflash() {
     state = Idle;
-    xmit_byte = 0;
+    xmit_byte = 0xff;
     recv_byte = 0;
     bit = 0;
 }
 
 void spiflash::eval(Vfpga20 *module, double time) {
     // if the flash is not selected, reset state and bail out
-    if (module->SPI_SS) {
+    if (module->SPI_SELECT != 0x01) {
         module->SPI_SDI = 1;    // internal pull-up on the FPGA
         state = Idle;
         command = 0;
@@ -29,6 +29,7 @@ void spiflash::eval(Vfpga20 *module, double time) {
             // Mode 0: SCK is already low, get first bit onto MISO
             // Mode 3: SCK is high, shift when it falls
             state = module->SPI_SCK ? Latch : Shift;
+            module->SPI_SDI = 1;
             break;
         // in the Shift state wait for SCK high, then latch
         case Shift:
@@ -45,7 +46,7 @@ void spiflash::eval(Vfpga20 *module, double time) {
         case Latch:
             if (!module->SPI_SCK) {
                 module->SPI_SDI = (xmit_byte >> 7) & 1;
-                xmit_byte <<= 1;
+                xmit_byte = (xmit_byte << 1) | 1;
                 state = Shift;
             }
             break;

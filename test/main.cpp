@@ -18,8 +18,9 @@ using namespace std;
 #define PHI_FREQ        18.432
 #define OSC_FREQ        100.0
 
-const int IO_STATUS     = 0x100;
-const int IO_SPI_DATA   = 0x104;
+const int IO_CONTROL    = 0xf0;
+const int IO_SPI_CTRL   = 0xf1;
+const int IO_SPI_DATA   = 0xf2;
 
 const int MIN_WAITS     = 1;
 
@@ -32,7 +33,7 @@ const int MIN_WAITS     = 1;
 //    TW falls: sample /WAIT
 //    T3 falls: latch data for reads, /IORQ, /RD, /WR go high, data goes high
 
-enum cpu_op { IORead, IOWrite };
+enum cpu_op { IORead, IOWrite, Cycle };
 enum cpu_cycle { T1, T2, TW, T3 };
 
 typedef struct bus_state {
@@ -44,25 +45,72 @@ typedef struct bus_state {
 
 const vector<bus_state> states(
     {
-        { IORead, IO_STATUS, 0x0C,      "Reset state of status register" },
-        { IOWrite, IO_STATUS, 0x00,     "Disable auto-blink" },
-        { IORead, IO_STATUS, 0x00,      "Confirm status write succeeded" },
+        { IORead, IO_CONTROL, 0x10,     "Read version register" },
         { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command (should not have effect)" },
-        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
+
+        { IOWrite, IO_SPI_CTRL, 0x01,   "Enable SPI transaction" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
         { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 23-16" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 15-08" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
         { IOWrite, IO_SPI_DATA, 0x00,   "Write SPI address 07-00" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
+        { IOWrite, IO_SPI_CTRL, 0x09,   "Enable bulk read mode" },
+        { IOWrite, IO_SPI_DATA, 0xff,   "Write SPI dummy byte" },
         { IORead, IO_SPI_DATA, 0xef,    "Read manufacturer ID" },
+        { IORead, IO_SPI_CTRL, 0x09,    "SPI enabled and not busy" },
         { IORead, IO_SPI_DATA, 0x15,    "Read device ID" },
-        { IOWrite, IO_STATUS, 0x00,     "Disable SPI transaction" },
-        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
-        { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
-        { IORead, IO_STATUS, 0x00,      "Confirm dual-I/O command disabled SPI" },
-        { IOWrite, IO_STATUS, 0x10,     "Enable SPI transaction" },
-        { IORead, IO_SPI_DATA, 0xff,    "Read junk" },
-        { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code command" },
-        { IORead, 0x200, 0xff,          "Dummy read to extend trace" },
+        { IORead, IO_SPI_CTRL, 0x09,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x01,   "Enable SPI transaction" },
+        { IOWrite, IO_SPI_DATA, 0x92,   "Write SPI manufacturer code dual-I/O command" },
+        { IORead, IO_SPI_CTRL, 0x00,    "Confirm dual-I/O command disabled SPI" },
+
+        { IOWrite, IO_SPI_CTRL, 0x01,   "Enable SPI transaction" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0x01,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x11,   "Enable 25MHz SPI" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0x91,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x11,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x11,   "Enable 25MHz SPI" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0x91,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x11,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x21,   "Enable 12.5MHz SPI" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0xa1,    "SPI enabled and is busy" },
+        { Cycle, 0, 1,                  "Wait one machine cycle" },
+        { IORead, IO_SPI_CTRL, 0xa1,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x21,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x31,   "Enable 6.25MHz SPI" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0xb1,    "SPI enabled and is busy" },
+        { Cycle, 0, 3,                  "Wait three machine cycles" },
+        { IORead, IO_SPI_CTRL, 0xb1,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x31,    "SPI enabled and not busy" },
+
+        { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
+        { IOWrite, IO_SPI_CTRL, 0x71,   "Enable 400kHz SPI" },
+        { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
+        { IORead, IO_SPI_CTRL, 0xf1,    "SPI enabled and is busy" },
+        { Cycle, 0, 89,                "Wait 100 machine cycles" },
+        { IORead, IO_SPI_CTRL, 0xf1,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x71,    "SPI enabled and not busy" },
+
+        { IORead, 0x00, 0xff,           "Dummy read to extend trace" },
     }
 );
 
@@ -127,6 +175,8 @@ int main(int argc, char **argv) {
     // /WAIT is latched at the start of T2/TW
     bool latched_wait = false;
 
+    vluint8_t waited = 0;
+
     // Tick the clock until we are done
     while(state < states.end()) {
         bool phi_clocked = false;
@@ -184,6 +234,7 @@ int main(int argc, char **argv) {
                     if (phi_state && state->op == IOWrite) {
                         tb->WR = 0;
                     }
+                    if (phi_state) latched_wait = tb->waitstate;
                     if (!phi_state) {
                         cycle = TW;
                         wait_cycles = 1;
@@ -220,7 +271,12 @@ int main(int argc, char **argv) {
                             }
                             cout << endl;
                         }
-                        state++;
+
+                        if (state->op == Cycle && (++waited) < state->byte) {
+                        } else {
+                            state++;
+                            waited = 0;
+                        }
                         cycle = T1;
                         tb->IORQ = tb->RD = tb->WR = 1;
                     }
