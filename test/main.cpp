@@ -103,12 +103,12 @@ const vector<bus_state> states(
         { IORead, IO_SPI_CTRL, 0x31,    "SPI enabled and not busy" },
 
         { IOWrite, IO_SPI_CTRL, 0x00,   "Disable SPI transaction" },
-        { IOWrite, IO_SPI_CTRL, 0x71,   "Enable 400kHz SPI" },
+        { IOWrite, IO_SPI_CTRL, 0x73,   "Enable 400kHz SPI" },
         { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command" },
-        { IORead, IO_SPI_CTRL, 0xf1,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0xf3,    "SPI enabled and is busy" },
         { Cycle, 0, 89,                "Wait 100 machine cycles" },
-        { IORead, IO_SPI_CTRL, 0xf1,    "SPI enabled and is busy" },
-        { IORead, IO_SPI_CTRL, 0x71,    "SPI enabled and not busy" },
+        { IORead, IO_SPI_CTRL, 0xf3,    "SPI enabled and is busy" },
+        { IORead, IO_SPI_CTRL, 0x73,    "SPI enabled and not busy" },
 
         { IORead, 0x00, 0xff,           "Dummy read to extend trace" },
     }

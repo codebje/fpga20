@@ -18,10 +18,10 @@ The FPGA on the TRS-20's CPU board serves several roles:
   - [x] Warm boot controller
   - [ ] Interrupt controller
 
-  - LUTs used: 190/1280 (14%)
+  - LUTs used: 245/1280 (19%)
   - RAM blocks used: 0/16 (0%)
-  - Max. frequency for CLK1: 160.49MHz
-  - Max. frequency for PHI: 190.33MHz
+  - Max. frequency for CLK1: 113.65MHz
+  - Max. frequency for PHI: 194.33MHz
 
 ## Module guide
 
@@ -176,3 +176,8 @@ At 50MHz the CPU should be able to continually read. At slower speeds the BUSY b
 
 It's also time to give up on a 16-bit I/O space. I don't need that much space. Many instructions just don't let that high byte be used adequately. Only needing an 8-bit compare also makes it more plausible to do address decoding off-board. The CPU reserves 1/4th of the I/O space, the FPGA another 16 bytes, so there's 176 ports still available.
 
+This has enabled the use of the `outi/ini` family of instructions.
+
+### 19/11/2020 the INT4 pin is apparently dead
+
+INT4 doesn't work; it's not clear where the failure is between the FPGA pin and the header pin, but there is a failure. SD card SPI is now using INT3 for slave select.
