@@ -31,12 +31,16 @@ output          o_data_en, SPI_SCK, SPI_SDO, warmboot, waitstate;
 output  [1:0]   SPI_SELECT;
 output reg      warmboot_s0, warmboot_s1;
 
-parameter [7:0] ADDR_CONTROL   = 8'hf0,        // write: led/warmboot
-                ADDR_VERSION   = 8'hf0,        // read: version
+parameter [7:0] ADDR_CONTROL   = 8'hf0,        // read/write: led/warmboot
                 ADDR_SPI_CTRL  = 8'hf1,        // read/write: SPI control
-                ADDR_SPI_DATA  = 8'hf2;        // read/write: SPI data
+                ADDR_SPI_DATA  = 8'hf2,        // read/write: SPI data
+                ADDR_VERSION   = 8'hf3;        // read: version
 
-localparam [7:0] VERSION = 8'h10;
+// Changes:
+// 1.0          Substantial rewrite: 8-bit I/O, external SPI added
+// 1.1          Re-order external SPI pins, move ADDR_VERSION to its own
+// address
+localparam [7:0] VERSION = 8'h11;
 
 // keep the LEDs blinking along
 wire blink1, blink2;
@@ -154,6 +158,11 @@ always @(posedge i_clk) begin
                 case (addr[7:0])
                     ADDR_VERSION: begin
                         data_reg <= VERSION;
+                        read_data_reg <= 1;
+                        bus_state <= BUS_COMPLETE;
+                    end
+                    ADDR_CONTROL: begin
+                        data_reg <= { 1'b0, 1'b0, warmboot_s1, warmboot_s0, control_clk, control_led };
                         read_data_reg <= 1;
                         bus_state <= BUS_COMPLETE;
                     end

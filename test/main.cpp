@@ -21,6 +21,7 @@ using namespace std;
 const int IO_CONTROL    = 0xf0;
 const int IO_SPI_CTRL   = 0xf1;
 const int IO_SPI_DATA   = 0xf2;
+const int IO_VERSION    = 0xf3;
 
 const int MIN_WAITS     = 1;
 
@@ -45,7 +46,7 @@ typedef struct bus_state {
 
 const vector<bus_state> states(
     {
-        { IORead, IO_CONTROL, 0x10,     "Read version register" },
+        { IORead, IO_VERSION, 0x11,     "Read version register" },
         { IOWrite, IO_SPI_DATA, 0x90,   "Write SPI manufacturer code command (should not have effect)" },
 
         { IOWrite, IO_SPI_CTRL, 0x01,   "Enable SPI transaction" },

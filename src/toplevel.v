@@ -8,7 +8,6 @@ module toplevel(
     I2C_SDA,
     I2C_SCL,
     INT3,
-    INT4,
     INT5,
     INT6,
     INT7,
@@ -26,10 +25,10 @@ module toplevel(
     SPI_SS
 );
 
-input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI, INT7;
+input           CLK1, PHI, I2C_SCL, MREQ, IORQ, RD, WR, M1, SPI_SDI, INT3;
 input   [19:0]  A;
 inout   [7:0]   D;
-output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, INT3, INT4, INT5, INT6;
+output          LED1, LED2, SPI_SS, SPI_SCK, SPI_SDO, INT5, INT6, INT7;
 inout           WAIT, I2C_SDA;
 
 wire S0, S1, BOOT;
@@ -57,14 +56,19 @@ fpga20 main(
     S0, S1, BOOT                        // warm boot control
 );
 
+// Rewire for I/O board:
+//  | SS      | INT5 |
+//  | MOSI    | INT6 |
+//  | MISO    | INT3 |
+//  | SCK     | INT7 |
+
 assign SPI_SDO = spi_select[1] ? 1'bz : spi_sdo;
 assign SPI_SCK = spi_select[1] ? 1'bz : spi_sck;
-assign INT5 = spi_select[1] ? spi_sdo : 1'bz;
-assign INT6 = spi_select[1] ? spi_sck : 1'bz;
-assign spi_sdi = spi_select[1] ? INT7 : SPI_SDI;
+assign INT6 = spi_select[1] ? spi_sdo : 1'bz;
+assign INT7 = spi_select[1] ? spi_sck : 1'bz;
+assign spi_sdi = spi_select[1] ? INT3 : SPI_SDI;
 assign SPI_SS = ~(spi_select == { 0, 1 });
-assign INT4 = ~(spi_select == { 1, 1 });
-assign INT3 = ~(spi_select == 2'b11);
+assign INT5 = ~(spi_select == 2'b11);
 
 assign WAIT = waiting ? 0'b0 : 1'bz;
 assign D = data_en ? data_out : 8'bz;

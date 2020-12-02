@@ -35,9 +35,10 @@ The FPGA on the TRS-20's CPU board serves several roles:
 
 | Port  | Description                                                                           |
 | ----- | ------------------------------------------------------------------------------------- |
-| 00F0  | LED control & warm boot (write), version (read)                                       |
+| 00F0  | LED control & warm boot                                                               |
 | 00F1  | SPI control and status                                                                |
 | 00F2  | SPI data                                                                              |
+| 00F3  | Version information (read only)                                                       |
 
 ## Control/version port
 
